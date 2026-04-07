@@ -6,8 +6,18 @@ readme = "README.md"
 requires-python = ">=3.12.12"
 dependencies = [
     "dotenv>=0.9.9",
-    "kraken>=7.0.0b7",
+    "kraken>=7.0.0",
     "pillow>=12.1.1",
     "requests>=2.33.1",
     "transformers>=5.4.0",
 ]
+
+[project.scripts]
+ocr = "portal_htr.main:cli"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff.format]
+quote-style = "single"

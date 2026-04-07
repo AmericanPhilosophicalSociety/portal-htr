@@ -75,9 +75,7 @@ def download_book(nid, auth=(username, password), host=baseurl):
     '''Generator function to sequentially download images in a book'''
     session = connect_drupal(auth)
     book_data = fetch_child_nids(session, host, nid)
-    print(len(book_data))
     filepaths = fetch_file_paths(host, nid)
-    print(len(filepaths))
     for i, fp in zip(book_data, filepaths):
         child_nid = i['nid']
         image = load_image(session, fp)

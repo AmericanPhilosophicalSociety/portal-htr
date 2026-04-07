@@ -20,6 +20,7 @@ from .trocr import predict
 from .islandora import download_book
 from kraken.serialization import serialize
 from pathlib import Path
+import click
 
 
 def inference(page, seg_model, processor, rec_model):
@@ -42,6 +43,33 @@ def ocr_book(nid):
         img_type = image.format
         filename = Path(f'{child_nid}.{img_type}')
         image.save(filename)
-        segmentation, size = inference(filename, None, 'drnelson6/trocr-18th-c-english', 'drnelson6/trocr-18th-c-english')
+        segmentation, size = inference(
+            filename,
+            None,
+            'drnelson6/trocr-18th-c-english',
+            'drnelson6/trocr-18th-c-english'
+        )
         to_hocr(segmentation, size, child_nid)
         filename.unlink()
+
+
+@click.command()
+@click.option('--file', '-f', help='Path to a file with Drupal nodes')
+@click.argument('nodes', nargs=-1)
+def cli(file, nodes):
+    """
+    Program to prepare hOCR files of images from an Islandora site
+
+    Args: Drupal nodes from which to generate hOCR files
+    """
+    if len(nodes) > 0 and file:
+        raise click.BadOptionUsage(file, "Please provdie either a file with nodes or a list of nodes.")
+    if len(nodes) == 0 and not file:
+        raise click.UsageError("Please provide either a list of nodes or a file with a list of nodes")
+    if file:
+        with open(file, 'r') as f:
+            files = f.read().split('\n')
+            # discard any whitespace
+        nodes = [f for f in files if not f == '']
+    for node in nodes:
+        ocr_book(node)
