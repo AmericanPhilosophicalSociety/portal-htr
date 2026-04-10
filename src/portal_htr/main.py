@@ -45,7 +45,7 @@ def ocr_book(nid):
         image.save(filename)
         segmentation, size = inference(
             filename,
-            None,
+            'revcity_seg.mlmodel',
             'drnelson6/trocr-18th-c-english',
             'drnelson6/trocr-18th-c-english'
         )
@@ -73,3 +73,4 @@ def cli(file, nodes):
         nodes = [f for f in files if not f == '']
     for node in nodes:
         ocr_book(node)
+        click.echo(f'Processed {node}.')
