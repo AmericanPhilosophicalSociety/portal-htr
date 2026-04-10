@@ -25,7 +25,7 @@ from time import sleep
 
 load_dotenv()
 baseurl = str(os.getenv('PORTAL'))
-username = str(os.getenv('USER'))
+username = str(os.getenv('USERNAME'))
 password = str(os.getenv('PASSWORD'))
 
 # avoid decompression bomb error
