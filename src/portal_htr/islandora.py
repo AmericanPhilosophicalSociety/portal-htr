@@ -23,7 +23,7 @@ import io
 from time import sleep
 
 
-load_dotenv()
+load_dotenv(override=True)
 baseurl = str(os.getenv('PORTAL'))
 username = str(os.getenv('USERNAME'))
 password = str(os.getenv('PASSWORD'))
