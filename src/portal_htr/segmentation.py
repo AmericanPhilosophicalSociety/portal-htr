@@ -14,22 +14,18 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
-Utilities for performing segmentation in kraken
+Utilities for performing segmentation with YOLO
 """
-from PIL import Image
-from kraken.tasks import SegmentationTaskModel
-from kraken.configs import SegmentationInferenceConfig
+from ultralytics import YOLO
 
 
 def segment_page(page, model=None):
-    # if model, use custom model, otherwise load default kraken model
+    # if model, use custom model, otherwise load default YOLO OBB model
     if model:
-        model = SegmentationTaskModel.load_model(model)
+        model = YOLO(model)
     else:
-        model = SegmentationTaskModel.load_model()
-    # passing parameters to config not yet implemented
-    config = SegmentationInferenceConfig()
-    im = Image.open(page)
-    segmentation = model.predict(im, config)
-    # return size because we need it for serialization
-    return segmentation, im.size
+        model = YOLO('yolo26n-obb.pt')
+
+    # possible to pass in additional parameters, but not currently implemented
+    results = model(page, imgsz=1280)
+    return results
