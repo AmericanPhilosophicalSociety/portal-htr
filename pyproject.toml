@@ -10,6 +10,7 @@ dependencies = [
     "pillow>=12.1.1",
     "requests>=2.33.1",
     "transformers>=5.4.0",
+    "ultralytics>=8.4.45",
 ]
 
 [project.scripts]
