@@ -85,6 +85,13 @@ def reading_order(results):
         else:
             ordered_lines[n + 1].append(line)
 
+    for n, lineset in enumerate(ordered_lines):
+        print(lineset)
+        if len(lineset) > 1:
+            lineset = torch.stack(lineset)
+            lineset = lineset[lineset[:, -1][:, 1].argsort()]
+            ordered_lines[n] = lineset
+
     return ordered_regions, ordered_lines
 
 
@@ -102,5 +109,6 @@ def _segment_page(page, model=None):
 
 def segment_page(page, model=None):
     results = _segment_page(page, model=model)
-    ordered_regions, ordered_lines = reading_order(results[0].cpu())
+    results = results[0].cpu()
+    ordered_regions, ordered_lines = reading_order(results)
     return results.orig_shape, (ordered_regions, ordered_lines)
