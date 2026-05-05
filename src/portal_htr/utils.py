@@ -17,6 +17,7 @@
 Utility functions
 """
 import torch
+import numpy as np
 
 
 def compute_intersection(point, box):
@@ -46,3 +47,58 @@ def compute_box_center(box):
 
     # need to return a tensor so the math works
     return torch.tensor([cx, cy])
+
+
+def get_vector(line):
+    '''From two coordinates of a line, return the line's vector'''
+    a, b = line[0]
+    c, d = line[-1]
+
+    return (c - a, b - d)
+
+
+def rotate_segment(im, bbox):
+    '''Rotate a segment to prepare it for extraction from the image'''
+
+    vector = get_vector([bbox[-1], bbox[0]])
+    angle = np.arctan2(vector[1], vector[0])
+    # determine box width and height
+    # if height longer than width, assume box is vertical
+    box_width = bbox[0][0] - bbox[2][0]
+    box_height = bbox[0][1] - bbox[1][1]
+    if box_height > box_width:
+        angle = angle + np.pi / 2
+    w, h = im.size
+    center = torch.tensor([w / 2, h / 2])
+    if angle != 0.0:
+        angle = -angle
+        # provide transformation to adjust for planar geometry of the image
+        bbox[:, 1] = h - bbox[:, 1]
+        # displace image from center
+        bbox = bbox - center
+        # transformation matrix - set dtype to float32 to avoid issues with torch tensor
+        s = np.sin(angle, dtype=np.float32)
+        c = np.cos(angle, dtype=np.float32)
+        T = torch.tensor([
+            [c, -s],
+            [s, c]
+        ])
+        # matrix multiplication
+        rotated_bbox = (T@bbox.T).T
+        angle = np.rad2deg(angle)
+        im = im.rotate(angle, expand=True)
+        w, h = im.size
+        rotated_center = torch.tensor([w / 2, h / 2])
+        # undo previous displacements
+        rotated_bbox = rotated_bbox + rotated_center
+        rotated_bbox[:, 1] = h - rotated_bbox[:, 1]
+        # since image has been rotated, cannot assume coordinates correspond to position
+        x_coords, y_coords = zip(*rotated_bbox)
+    else:
+        x_coords, y_coords = zip(*bbox)
+    left = min(x_coords).item()
+    right = max(x_coords).item()
+    upper = min(y_coords).item()
+    lower = max(y_coords).item()
+
+    return (left, upper, right, lower), im

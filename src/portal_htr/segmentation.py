@@ -45,7 +45,6 @@ def reading_order(results):
         selected_cls = torch.tensor([c])
         mask = torch.isin(classes, selected_cls)
         filtered_boxes = boxes[mask]
-        print(filtered_boxes.shape)
         if len(filtered_boxes) != 0:
             regions[c].extend(filtered_boxes)
     
@@ -54,7 +53,6 @@ def reading_order(results):
     block = regions[0.]
 
     region_order = [left, right, block]
-    # region_order = [block, left, right]
 
     ordered_regions = []
     # reorder regions from top to bottom, left to right
@@ -64,8 +62,12 @@ def reading_order(results):
             reordered_region = r[r[:, -1][:, 1].argsort()]
             ordered_regions.extend(reordered_region)
         else:
-            r = r[0]
-            ordered_regions.append(r)
+            # IndexError occurs if there are zero regions of that type detected
+            try:
+                r = r[0]
+                ordered_regions.append(r)
+            except IndexError:
+                continue
 
 
     # make a container to hold the lines, with one extra for unassigned lines
@@ -86,11 +88,21 @@ def reading_order(results):
             ordered_lines[n + 1].append(line)
 
     for n, lineset in enumerate(ordered_lines):
-        print(lineset)
         if len(lineset) > 1:
             lineset = torch.stack(lineset)
             lineset = lineset[lineset[:, -1][:, 1].argsort()]
             ordered_lines[n] = lineset
+
+    # remove regions with no text
+    empty_regions = [n for n, i in enumerate(ordered_lines) if i == []]
+    # check if unassigned lines
+    if empty_regions[-1] == len(ordered_lines) - 1:
+        empty_regions.pop(-1)
+        ordered_lines.pop(-1)
+
+    for i in sorted(empty_regions, reverse=True):
+        ordered_regions.pop(i)
+        ordered_lines.pop(-1)
 
     return ordered_regions, ordered_lines
 
