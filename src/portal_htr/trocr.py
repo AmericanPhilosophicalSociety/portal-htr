@@ -185,7 +185,7 @@ class TrOCRInferenceDataset(Dataset):
         return encoding
 
 
-def load_model(processor, model):
+def load_model(processor=None, model=None):
     if processor:
         processor = TrOCRProcessor.from_pretrained(processor, token=token)
     else:

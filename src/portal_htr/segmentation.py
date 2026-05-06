@@ -21,6 +21,7 @@ from collections import defaultdict
 
 from ultralytics import YOLO
 from .utils import compute_intersection, compute_box_center
+from . import models
 
 
 def reading_order(results):
@@ -96,7 +97,7 @@ def reading_order(results):
     # remove regions with no text
     empty_regions = [n for n, i in enumerate(ordered_lines) if i == []]
     # check if unassigned lines
-    if empty_regions[-1] == len(ordered_lines) - 1:
+    if len(empty_regions) > 0 and empty_regions[-1] == len(ordered_lines) - 1:
         empty_regions.pop(-1)
         ordered_lines.pop(-1)
 
@@ -107,20 +108,23 @@ def reading_order(results):
     return ordered_regions, ordered_lines
 
 
-def _segment_page(page, model=None):
-    # if model, use custom model, otherwise load default YOLO OBB model
+def load_yolo(model=None):
     if model:
         model = YOLO(model)
     else:
-        model = YOLO('yolo26n-obb.pt')
+        from importlib import resources  # NOQA
+        model = YOLO(resources.files(models) / 'yolo-obb.pt')
 
+    return model
+
+def _segment_page(page, model):
     # possible to pass in additional parameters, but not currently implemented
     results = model(page, imgsz=1280)
     return results
 
 
-def segment_page(page, model=None):
-    results = _segment_page(page, model=model)
+def segment_page(page, model):
+    results = _segment_page(page, model)
     results = results[0].cpu()
     ordered_regions, ordered_lines = reading_order(results)
     return results.orig_shape, (ordered_regions, ordered_lines)
