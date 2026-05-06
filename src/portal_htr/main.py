@@ -1,62 +1,93 @@
 #
 # Copyright 2026 David Ragnar Nelson
 
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
 
-# http://www.apache.org/licenses/LICENSE-2.0
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
 
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 Main entrypoint for end-to-end HTR operations
 """
-from .segmentation import segment_page
-from .trocr import predict
+from .segmentation import load_yolo, segment_page
+from .trocr import load_model, predict
 from .islandora import download_book
-from kraken.serialization import serialize
+from .containers import HTRLine, HTRRegion, HTRPage
+from .serialization import serialize
 from pathlib import Path
 import click
 
 
 def inference(page, seg_model, processor, rec_model):
     '''Perform segmentation and recognition on a single page'''
-    segmentation, size = segment_page(page, seg_model)
-    rec = predict(page, segmentation, processor, rec_model)
-    segmentation.lines = rec
-    return segmentation, size
+    size, segmentation = segment_page(page, seg_model)
+    regions, lines = segmentation
+    if len(lines) == 0:
+        print(f'No text detected on {page}.')
+        return None
+    preds = []
+    confidences = []
+    for lineset in lines:
+        pred, conf = predict(page, lineset, processor, rec_model)
+        preds.extend(pred)
+        confidences.extend(conf)
+
+    n = 0
+    prepared_regions = []
+    for region, lineset in zip(regions, lines):
+        prepared_lines = []
+        for line in lineset:
+            text = preds[n]
+            score = preds[n]
+            prepared_line = HTRLine(line, text, score)
+            prepared_lines.append(prepared_line)
+            n = n + 1
+        prepared_region = HTRRegion(region, lines=prepared_lines)
+        prepared_regions.append(prepared_region)
+
+    prepared_page = HTRPage(page, size, regions=prepared_regions)
+
+    return prepared_page
 
 
-def to_hocr(segmentation, size, file_base):
-    hocr_xml = serialize(segmentation, image_size=size, template='portal_hocr', template_source='custom', sub_line_segmentation=False)
+def to_hocr(page):
+    hocr_xml = serialize(page)
+    file_base = page.name.stem.split('.')[0]
     with open(f'{file_base}.html', 'w') as f:
         f.write(hocr_xml)
 
 
-def ocr_book(nid):
+def ocr_book(nid, seg_model, processor, rec_model):
     book_data = download_book(nid)
     for child_nid, image in book_data:
         img_type = image.format
         filename = Path(f'{child_nid}.{img_type}')
         image.save(filename)
-        segmentation, size = inference(
+        page = inference(
             filename,
-            'revcity_seg.mlmodel',
-            'drnelson6/trocr-18th-c-english',
-            'drnelson6/trocr-18th-c-english'
+            seg_model,
+            processor,
+            rec_model
         )
-        to_hocr(segmentation, size, child_nid)
+        if page:
+            to_hocr(page)
         filename.unlink()
 
 
 @click.command()
 @click.option('--file', '-f', help='Path to a file with Drupal nodes')
+@click.option('--seg-model', '-s', default=None)
+@click.option('--processor', '-p', default='american-philosophical-society/trocr-18th-c-english-obb')
+@click.option('--rec-model', '-r', default='american-philosophical-society/trocr-18th-c-english-obb')
 @click.argument('nodes', nargs=-1)
-def cli(file, nodes):
+def cli(file, seg_model, processor, rec_model, nodes):
     """
     Program to prepare hOCR files of images from an Islandora site
 
@@ -71,6 +102,8 @@ def cli(file, nodes):
             files = f.read().split('\n')
             # discard any whitespace
         nodes = [f for f in files if not f == '']
+    yolo_model = load_yolo(model=seg_model)
+    processor, rec_model = load_model(processor, rec_model)
     for node in nodes:
-        ocr_book(node)
+        ocr_book(node, yolo_model, processor, rec_model)
         click.echo(f'Processed {node}.')

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8">
+<!DOCTYPE html
+  PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="" lang="en">
+  <head>
+    <title>Image: {{ page.name }}</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+    <meta name="ocr-system" content="APS Portal HTR"/>
+    <meta name="ocr-capabilities" content="ocr_page ocr_par ocr_line ocrx_word"/>
+  </head>
+  <body>
+    <div class="ocr_page"
+         id="{{ page.name }}"
+         title="image ; bbox 0 0 {{ page.width }} {{ page.height }}; ppageno 0">
+      {% for region in page.regions %}
+        {% set region_loop = loop %}
+        <p class="ocr_par"
+           dir="ltr"
+           id="region_{{ region_loop.index }}"
+           title="bbox {{ region.bbox|join(' ') }}"
+           lang="en">
+           {% for line in region.lines %}
+             <span class="ocr_line" id="region_{{ region_loop.index }}_line_{{ loop.index }}" title="bbox {{ line.bbox|join(' ') }}">
+                <span class="ocrx_word" id="region_{{ region_loop.index }}_line_{{ loop.index }}" title="bbox {{ line.bbox|join(' ') }}">{{ line.text }}</span>
+             </span>
+           {% endfor %}
+        </p>
+      {% endfor %}
+    </div>
+  </body>
+</html>

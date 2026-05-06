@@ -1,17 +1,18 @@
 #
 # Copyright 2026 David Ragnar Nelson
 
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
 
-# http://www.apache.org/licenses/LICENSE-2.0
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
 
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 Main entrypoint for deploying TrOCR models
 """
@@ -23,22 +24,22 @@ from torch.utils.data import DataLoader
 
 from torchmetrics.text import CharErrorRate, WordErrorRate
 
-from PIL import Image, ImageFile
+from PIL import Image, ImageOps
 
 from transformers import TrOCRProcessor, VisionEncoderDecoderModel
 
 import lightning as L
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 
-from kraken.lib.segmentation import extract_polygons
-from kraken.containers import BaselineOCRRecord
-
 from dotenv import load_dotenv
 import os
+
+from .utils import rotate_segment
 
 
 load_dotenv()
 token = str(os.getenv('HF_TOKEN'))
+
 ############
 # Training
 ###########
@@ -96,9 +97,9 @@ class TrOCRModule(L.LightningModule):
         self.save_hyperparameters()
 
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
-        outputs = self.model.generate(batch)
-        pred = processor.batch_decode(outputs, skip_special_tokens=True)
-        return pred
+        outputs = self.model.generate(batch, output_scores=True, return_dict_in_generate=True)
+        pred = processor.batch_decode(outputs['sequences'], skip_special_tokens=True)
+        return pred, outputs['sequences_scores']
 
     def training_step(self, batch, batch_idx):
         outputs = self.model(**batch)
@@ -158,56 +159,33 @@ def save_model_to_safetensors(ckpt, path):
 # Inference
 ############
 
-# adapted from kraken.lib.vgsl.rpred
-def _extract_line(im, segmentation, line_idx, legacy: bool = False):
-    '''
-    Given an image, segmentation, and line index, return a single
-    extracted line as a PIL Image
-    '''
-
-    line = segmentation.lines[line_idx]
-    seg = dataclasses.replace(segmentation, lines=[line])
-    # try:
-        # im, _ = next(extract_polygons(im, seg, legacy=legacy))
-        # return im, line_idx
-    # except ValueError:
-        # return None, line_idx
-    im, _ = next(extract_polygons(im, seg, legacy=legacy))
-    return im, line_idx
 
 class TrOCRInferenceDataset(Dataset):
     '''Dataset to run inference on pre-segmented pages using TrOCR'''
-    def __init__(self, image, lines, processor, max_target_length=128):
+    def __init__(self, image, lines, processor, flip=False, max_target_length=128):
         self.image = image
         self.lines = lines
         self.processor = processor
+        self.flip = flip
         self.max_target_length = max_target_length
 
     def __len__(self):
-        return len(self.lines.lines)
+        return len(self.lines)
 
     def __getitem__(self, idx):
         im = Image.open(self.image)
-        im, _ = _extract_line(im, self.lines, idx)
+        crop, im = rotate_segment(im, self.lines[idx])
+        im = im.crop(crop)
+        if self.flip:
+            im = ImageOps.flip(im)
+            im = ImageOps.mirror(im)
         pixel_values = self.processor(im, return_tensors='pt').pixel_values
 
         encoding = pixel_values.squeeze()
         return encoding
 
 
-def predict(
-    image,
-    segmentation,
-    processor=None,
-    model=None,
-    batch_size=8,
-    num_workers=4
-):
-    seg_len = len(segmentation.lines)
-    # rec_results= [None] * seg_len
-    idx = 0
-
-        # load processor and model
+def load_model(processor=None, model=None):
     if processor:
         processor = TrOCRProcessor.from_pretrained(processor, token=token)
     else:
@@ -218,10 +196,24 @@ def predict(
     else:
         model = VisionEncoderDecoderModel.from_pretrained('microsoft/trocr-base-handwritten', token=token)
 
+    return processor, model
+
+
+def predict(
+    image,
+    lines,
+    processor=None,
+    model=None,
+    batch_size=8,
+    num_workers=4
+):
+    seg_len = len(lines)
+    idx = 0
+
     # prepare data
     inference_dataset = TrOCRInferenceDataset(
         image=image,
-        lines=segmentation,
+        lines=lines,
         processor=processor,
     )
 
@@ -231,21 +223,45 @@ def predict(
         num_workers=num_workers
     )
 
-    results = []
+    results = [None] * seg_len
+    confidences = [None] * seg_len
+    bad_lines = []
     for batch in dataloader:
-        logits = model.generate(batch)
+        output = model.generate(batch, output_scores=True, return_dict_in_generate=True)
+        logits, scores = output['sequences'], output['sequences_scores']
         preds = processor.batch_decode(logits, skip_special_tokens=True)
-        for pred in preds:
-            rec = _recognize_lines(pred, idx, segmentation)
-            results.append(rec)
-            # rec_results[idx] = rec
-            # idx = idx + 1
+        for pred, score in zip(preds, scores):
+            # keep track of lines with unacceptable confidences
+            if score < -0.05:
+                bad_lines.append(idx)
+            results[idx] = pred
+            confidences[idx] = score
+            idx = idx + 1
 
-    return results
+    bad_dataset = TrOCRInferenceDataset(
+        image=image,
+        lines=[lines[i] for i in bad_lines],
+        processor=processor,
+        flip=True,
+    )
 
+    bad_dataloader = DataLoader(
+        bad_dataset,
+        batch_size=batch_size,
+        num_workers=num_workers,
+    )
 
-def _recognize_lines(pred, idx, segmentation):
-    line = segmentation.lines[idx]
-    record = BaselineOCRRecord(pred, line.boundary, [], line)
-    return record
+    n = 0
+    for batch in bad_dataloader:
+        output= model.generate(batch, output_scores=True, return_dict_in_generate=True)
+        logits, scores = output['sequences'], output['sequences_scores']
+        preds = processor.batch_decode(logits, skip_special_tokens=True)
+        for pred, score in zip(preds, scores):
+            first_score = confidences[bad_lines[n]]
+            # if confidence is better, keep the new prediction, otherwise go with the first one
+            if score > first_score:
+                results[bad_lines[n]] = pred
+                confidences[bad_lines[n]] = scores
+            n = n + 1
 
+    return results, confidences
