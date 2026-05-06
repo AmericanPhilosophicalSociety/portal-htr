@@ -86,7 +86,10 @@ def reading_order(results):
                 break
         # if no match, assign to dummy last region
         else:
-            ordered_lines[n + 1].append(line)
+            if len(ordered_regions) != 0:
+                ordered_lines[n + 1].append(line)
+            else:
+                ordered_lines[0].append(line)
 
     for n, lineset in enumerate(ordered_lines):
         if len(lineset) > 1:
