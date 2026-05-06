@@ -2,9 +2,9 @@
 
 Command line utility for generating hOCR files from an Islandora site. Segmentation is run via kraken and text recognition via TrOCR.
 
-NOTE: This is alpha software and has not yet exposed all configuration options to the command line interface. At the moment it runs on the default kraken segmentation model and a version of TrOCR trained via transfer learning on 18th century handwritten English text.
+NOTE: This is alpha software and has not yet exposed all configuration options to the command line interface. At the moment it runs on a custom-trained [YOLO26 OBB model](https://docs.ultralytics.com/tasks/obb/) (packaged as part of the software) and a [version of TrOCR](https://huggingface.co/american-philosophical-society/trocr-18th-c-english-obb) trained via transfer learning on 18th century handwritten English text.
 
-This software only runs on Linux. Windows is not suppoted. For Windows users, use WSL. Furthermore, it assumes you have access to a GPU. Usage on CPU is untested.
+This software has only been tested on native Linux (Ubuntu) and WSL. We presume that native Windows is not suppoted. Furthermore, it assumes you have access to a GPU. Usage on CPU is untested.
 
 ## Installation
 
