@@ -41,6 +41,9 @@ def inference(page, seg_model, processor, rec_model):
 
     n = 0
     prepared_regions = []
+    # check for orphan lines
+    if len(region) != len(lines):
+        orphan_lines = lines.pop(-1)
     for region, lineset in zip(regions, lines):
         prepared_lines = []
         for line in lineset:
@@ -52,6 +55,12 @@ def inference(page, seg_model, processor, rec_model):
         prepared_region = HTRRegion(region, lines=prepared_lines)
         prepared_regions.append(prepared_region)
 
+    # orphan lines are assigned a dummy region equal to the line itself
+    for line in orphan_lines:
+        prepared_line = HTRLine(line, text, score)
+        dummy_region = HTRRegion(line, lines=[prepared_line])
+        prepared_regions.append(dummy_region)
+    
     prepared_page = HTRPage(page, size, regions=prepared_regions)
 
     return prepared_page
